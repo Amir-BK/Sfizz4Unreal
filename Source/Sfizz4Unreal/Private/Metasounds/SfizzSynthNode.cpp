@@ -11,6 +11,11 @@
 
 #include "HarmonixMetasound/DataTypes/MidiStream.h"
 #include "HarmonixMetasound/DataTypes/MusicTransport.h"
+#include "HarmonixDsp/AudioUtility.h"
+
+#include "HarmonixMetasound/MidiOps/StuckNoteGuard.h"
+#include "Sfizz.h"
+#include <vector>
 //#include "MidiStreamTrackIsolatorNode.h"
 
 #include "SfizzSynthNode.h"
@@ -110,16 +115,8 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			FInt32ReadRef MaxTrackIndex;
 			FStringReadRef SfzLibPath;
 			FStringReadRef ScalaFilePath;
-			//FBoolReadRef IncludeConductorTrack;
 		};
 
-		struct FOutputs
-		{
-
-
-		
-
-		};
 
 		static TUniquePtr<IOperator> CreateOperator(const FBuildOperatorParams& InParams, FBuildResults& OutResults)
 		{
@@ -133,7 +130,6 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				InputData.GetOrCreateDefaultDataReadReference<int32>(Inputs::MaxTrackIndexName, InParams.OperatorSettings),
 				InputData.GetOrCreateDefaultDataReadReference<FString>(Inputs::SfzLibPathName, InParams.OperatorSettings),
 				InputData.GetOrCreateDefaultDataReadReference<FString>(Inputs::ScalaFilePathName, InParams.OperatorSettings)
-				//InputData.GetOrCreateDefaultDataReadReference<bool>(Inputs::IncludeConductorTrackName, InParams.OperatorSettings)
 			};
 
 			// outputs
@@ -147,6 +143,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			: Inputs(MoveTemp(InInputs))
 			, AudioOutLeft(FAudioBufferWriteRef::CreateNew(InParams.OperatorSettings))
 			, AudioOutRight(FAudioBufferWriteRef::CreateNew(InParams.OperatorSettings))
+			, SampleRate(InParams.OperatorSettings.GetSampleRate())
 		{
 			Reset(InParams);
 		}
@@ -159,7 +156,6 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			InVertexData.BindReadVertex(Inputs::MaxTrackIndexName, Inputs.MaxTrackIndex);
 			InVertexData.BindReadVertex(Inputs::SfzLibPathName, Inputs.SfzLibPath);
 			InVertexData.BindReadVertex(Inputs::ScalaFilePathName, Inputs.ScalaFilePath);
-			//InVertexData.BindReadVertex(Inputs::IncludeConductorTrackName, Inputs.IncludeConductorTrack);
 		}
 
 		virtual void BindOutputs(FOutputVertexInterfaceData& InVertexData) override
@@ -170,7 +166,10 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 		void Reset(const FResetParams&)
 		{
-	
+			
+			//Outputs.MidiStream->Reset();
+			//Outputs.MidiStream->SetSampleRate(48000);
+			//Outputs.MidiStream->SetSamplesPerBlock(1024);
 		}
 
 
@@ -178,36 +177,170 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		virtual ~FSfizzSynthMetasoundOperator()
 		{
 			UE_LOG(LogTemp, Log, TEXT("Sfizz Synth Node Destructor"));
+			if (SfizzSynth)
+			{
+				sfizz_free(SfizzSynth);
+				SfizzSynth = nullptr;
+				DeinterleavedBuffer[0] = nullptr;
+				DeinterleavedBuffer[1] = nullptr;
+				DecodedAudioDataBuffer.clear();
+			}
 
+		}
+
+		void NoteOn(FMidiVoiceId InVoiceId, int8 InMidiNoteNumber, int8 InVelocity, int8 InMidiChannel = 0, int32 InEventTick = 0, int32 InCurrentTick = 0, float InOffsetMs = 0)
+		{
+			// we ignore InMidiChannel because this is a single channel instrument!
+			if (InMidiNoteNumber > Harmonix::Midi::Constants::GMaxNote)
+			{
+				return;
+			}
+
+			FScopeLock Lock(&sNoteActionCritSec);
+
+			FPendingNoteAction* ExitingAction = PendingNoteActions.FindByPredicate([=](const FPendingNoteAction& Action) { return Action.VoiceId == InVoiceId; });
+			int8 PendingVelocity = ExitingAction ? ExitingAction->Velocity : 0;
+
+			if (InVelocity > PendingVelocity || InVelocity == kNoteOff)
+			{
+				PendingNoteActions.Add(
+					{
+						/* .MidiNote    = */ InMidiNoteNumber,
+						/* .Velocity    = */ InVelocity,
+						/* .EventTick   = */ InEventTick,
+						/* .TriggerTick = */ InCurrentTick,
+						/* .OffsetMs    = */ InOffsetMs,
+						/* .FrameOffset = */ 0,
+						/* .VoiceId     = */ InVoiceId
+					});
+			}
+		}
+	
+
+		void NoteOff(FMidiVoiceId InVoiceId, int8 InMidiNoteNumber, int8 InMidiChannel /*= 0*/)
+		{
+			// we ignore InMidiChannel because this is a single channel instrument!
+			NoteOn(InVoiceId, InMidiNoteNumber, kNoteOff);
 		}
 
 
 		void Execute()
 		{
+			const int32 BlockSizeFrames = AudioOutLeft->Num();
+			
+			if (*Inputs.SfzLibPath != LibPath)
+			{
+				LibPath = *Inputs.SfzLibPath;
+				if (!bSfizzContextCreated)
+				{
+					SfizzSynth = sfizz_create_synth();
+					sfizz_set_sample_rate(SfizzSynth, SampleRate);
+					sfizz_set_samples_per_block(SfizzSynth, BlockSizeFrames);
+					DecodedAudioDataBuffer.resize(2 * BlockSizeFrames);
+					DeinterleavedBuffer.resize(2);
+					DeinterleavedBuffer[0] = AudioOutLeft->GetData();
+					DeinterleavedBuffer[1] = AudioOutRight->GetData();
+					bSfizzContextCreated = true;
+					FString RemoveQuotes = LibPath;
+					RemoveQuotes.TrimQuotesInline();
+
+					bSuccessLoadSFZFile = sfizz_load_file(SfizzSynth, TCHAR_TO_ANSI(*RemoveQuotes));
+					UE_CLOG(!bSuccessLoadSFZFile, LogTemp, Warning, TEXT("SFZ file failed to load, Synth not initialized."));
+				}
+
+				if (bSfizzContextCreated)
+				{
+					// send note on test
+					sfizz_send_note_on(SfizzSynth, 0, 60, 100);
+				}
+			}
+
+			
+			if (!bSuccessLoadSFZFile)
+			{
+				return;
+			}
+
+			
+			StuckNoteGuard.UnstickNotes(*Inputs.MidiStream, [this](const FMidiStreamEvent& Event)
+				{
+					NoteOff(Event.GetVoiceId(), Event.MidiMessage.GetStdData1(), Event.MidiMessage.GetStdChannel());
+				});
+			
 			//Filter.SetFilterValues(*Inputs.MinTrackIndex, *Inputs.MaxTrackIndex, false);
 
 			//Outputs.MidiStream->PrepareBlock();
 
-			if (*Inputs.Enabled)
-			{
-				//stream current tick?
-				//int32 CurrentTick = Inputs.MidiStream->GetClock()->GetCurrentMidiTick();
-				//Inputs.MidiStream->Add
-				
-				PendingMessages.Empty();
-				//Filter.Process(*Inputs.MidiStream, *Outputs.MidiStream);
-			}
+			sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, BlockSizeFrames);
+
+			_memccpy(AudioOutLeft->GetData(), DeinterleavedBuffer[0], BlockSizeFrames, sizeof(float));
+			_memccpy(AudioOutRight->GetData(), DeinterleavedBuffer[1], BlockSizeFrames, sizeof(float));
+
+
 		}
 	private:
 		FInputs Inputs;
-		FOutputs Outputs;
+	//	FOutputs Outputs;
 
-		FDelegateHandle RawEventDelegateHandle;
-		int32 TickOffset = 0; //in theory we can start when the stream tick is different from the device tick, we'll see
-		TArray<TTuple<int32, FMidiMsg>> PendingMessages;
+
+		struct FPendingNoteAction
+		{
+			int8  MidiNote = 0;
+			int8  Velocity = 0;
+			int32 EventTick = 0;
+			int32 TriggerTick = 0;
+			float OffsetMs = 0.0f;
+			int32 FrameOffset = 0;
+			FMidiVoiceId VoiceId;
+		};
+
+		struct FMIDINoteStatus
+		{
+			// is the key pressed down?
+			bool KeyedOn = false;
+
+			// is there any sound coming out of this note? (release could mean key off but voices active)
+			int32 NumActiveVoices = 0;
+		};
+
+
+		//stuff copied from the fusion sampler...
+		FCriticalSection sNoteActionCritSec;
+		FCriticalSection sNoteStatusCritSec;
+		static const int8 kNoteIgnore = -1;
+		static const int8 kNoteOff = 0;
+		static const int32 kMaxLayersPerNote = 128;
+		Harmonix::Midi::Ops::FStuckNoteGuard StuckNoteGuard;
+
+		FSampleRate SampleRate;
+
+		//** DATA
+		int32 FramesPerBlock = 0;
+		int32 CurrentTrackNumber = 0;
+		bool MadeAudioLastFrame = false;
+
+		TArray<FPendingNoteAction> PendingNoteActions;
+		FMIDINoteStatus NoteStatus[Harmonix::Midi::Constants::GMaxNumNotes];
+
+		//sfizz stuff
+		sfizz_synth_t* SfizzSynth;
+
+		std::vector<float>   DecodedAudioDataBuffer;
+		std::vector<float*>  DeinterleavedBuffer;
+	
+		bool bSuccessLoadSFZFile = false;
+		bool bSfizzContextCreated = false;
+		FString LibPath;
+		FString ScalaPath;
+
+
+		
 		FAudioBufferWriteRef AudioOutLeft;
 		FAudioBufferWriteRef AudioOutRight;
 		//unDAWMetasounds::TrackIsolatorOP::FMidiTrackIsolator Filter;
+
+	
+
 	};
 
 	class FSfizzSynthNode final : public FNodeFacade
