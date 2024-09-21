@@ -45,13 +45,15 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		DEFINE_INPUT_METASOUND_PARAM(MidiStream, "MidiStream", "MidiStream");
 		DEFINE_INPUT_METASOUND_PARAM(MinTrackIndex, "Track Index", "Track");
 		DEFINE_INPUT_METASOUND_PARAM(MaxTrackIndex, "Channel Index", "Channel");
-		DEFINE_INPUT_METASOUND_PARAM(MidiDeviceName, "Midi Device Name", "The name of the midi input device we want to receive with this node")
+		DEFINE_INPUT_METASOUND_PARAM(SfzLibPath, "Sfz Lib Path", "Absolute path to the Sfz lib, passed to the Sfizz synth")
+		DEFINE_INPUT_METASOUND_PARAM(ScalaFilePath, "Scala File Path", "Optional path to Scala file")
 		//DEFINE_INPUT_METASOUND_PARAM(IncludeConductorTrack, "Include Conductor Track", "Enable to include the conductor track (AKA track 0)");
 	}
 
 	namespace Outputs
 	{
-		DEFINE_OUTPUT_METASOUND_PARAM(MidiStream, "MidiStream", "MidiStream");
+		DEFINE_OUTPUT_METASOUND_PARAM(AudioOutLeft, "Audio Out Left", "Left output of SFizz Synth");
+		DEFINE_OUTPUT_METASOUND_PARAM(AudioOutRight, "Audio Out Right", "Right output of Sfizz Synth");
 	}
 
 	class FSfizzSynthMetasoundOperator final : public TExecutableOperator<FSfizzSynthMetasoundOperator>
@@ -87,11 +89,13 @@ namespace Sfizz4Unreal::SfizzSynthNode
 					TInputDataVertex<FMidiStream>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::MidiStream)),
 					TInputDataVertex<int32>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::MinTrackIndex), 0),
 					TInputDataVertex<int32>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::MaxTrackIndex), 0),
-					TInputDataVertex<FString>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::MidiDeviceName))
-					//TInputDataVertex<bool>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::IncludeConductorTrack), false)
+					TInputDataVertex<FString>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::SfzLibPath)),
+					TInputDataVertex<FString>(METASOUND_GET_PARAM_NAME_AND_METADATA(Inputs::ScalaFilePath))
+	
 				),
 				FOutputVertexInterface(
-					TOutputDataVertex<FMidiStream>(METASOUND_GET_PARAM_NAME_AND_METADATA(Outputs::MidiStream))
+					TOutputDataVertex<FAudioBuffer>(METASOUND_GET_PARAM_NAME_AND_METADATA(Outputs::AudioOutLeft)),
+					TOutputDataVertex<FAudioBuffer>(METASOUND_GET_PARAM_NAME_AND_METADATA(Outputs::AudioOutRight))
 				)
 			);
 
@@ -104,13 +108,17 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			FMidiStreamReadRef MidiStream;
 			FInt32ReadRef MinTrackIndex;
 			FInt32ReadRef MaxTrackIndex;
-			FStringReadRef MidiDeviceName;
+			FStringReadRef SfzLibPath;
+			FStringReadRef ScalaFilePath;
 			//FBoolReadRef IncludeConductorTrack;
 		};
 
 		struct FOutputs
 		{
-			FMidiStreamWriteRef MidiStream;
+
+
+		
+
 		};
 
 		static TUniquePtr<IOperator> CreateOperator(const FBuildOperatorParams& InParams, FBuildResults& OutResults)
@@ -123,21 +131,22 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				InputData.GetOrConstructDataReadReference<FMidiStream>(Inputs::MidiStreamName),
 				InputData.GetOrCreateDefaultDataReadReference<int32>(Inputs::MinTrackIndexName, InParams.OperatorSettings),
 				InputData.GetOrCreateDefaultDataReadReference<int32>(Inputs::MaxTrackIndexName, InParams.OperatorSettings),
-				InputData.GetOrCreateDefaultDataReadReference<FString>(Inputs::MidiDeviceNameName, InParams.OperatorSettings)
+				InputData.GetOrCreateDefaultDataReadReference<FString>(Inputs::SfzLibPathName, InParams.OperatorSettings),
+				InputData.GetOrCreateDefaultDataReadReference<FString>(Inputs::ScalaFilePathName, InParams.OperatorSettings)
 				//InputData.GetOrCreateDefaultDataReadReference<bool>(Inputs::IncludeConductorTrackName, InParams.OperatorSettings)
 			};
 
-			FOutputs Outputs
-			{
-				FMidiStreamWriteRef::CreateNew()
-			};
+			// outputs
+			FOutputVertexInterface OutputInterface;
 
-			return MakeUnique<FSfizzSynthMetasoundOperator>(InParams, MoveTemp(Inputs), MoveTemp(Outputs));
+
+			return MakeUnique<FSfizzSynthMetasoundOperator>(InParams, MoveTemp(Inputs));
 		}
 
-		FSfizzSynthMetasoundOperator(const FBuildOperatorParams& InParams, FInputs&& InInputs, FOutputs&& InOutputs)
+		FSfizzSynthMetasoundOperator(const FBuildOperatorParams& InParams, FInputs&& InInputs)
 			: Inputs(MoveTemp(InInputs))
-			, Outputs(MoveTemp(InOutputs))
+			, AudioOutLeft(FAudioBufferWriteRef::CreateNew(InParams.OperatorSettings))
+			, AudioOutRight(FAudioBufferWriteRef::CreateNew(InParams.OperatorSettings))
 		{
 			Reset(InParams);
 		}
@@ -148,13 +157,15 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			InVertexData.BindReadVertex(Inputs::MidiStreamName, Inputs.MidiStream);
 			InVertexData.BindReadVertex(Inputs::MinTrackIndexName, Inputs.MinTrackIndex);
 			InVertexData.BindReadVertex(Inputs::MaxTrackIndexName, Inputs.MaxTrackIndex);
-			InVertexData.BindReadVertex(Inputs::MidiDeviceNameName, Inputs.MidiDeviceName);
+			InVertexData.BindReadVertex(Inputs::SfzLibPathName, Inputs.SfzLibPath);
+			InVertexData.BindReadVertex(Inputs::ScalaFilePathName, Inputs.ScalaFilePath);
 			//InVertexData.BindReadVertex(Inputs::IncludeConductorTrackName, Inputs.IncludeConductorTrack);
 		}
 
 		virtual void BindOutputs(FOutputVertexInterfaceData& InVertexData) override
 		{
-			InVertexData.BindReadVertex(Outputs::MidiStreamName, Outputs.MidiStream);
+			InVertexData.BindWriteVertex(Outputs::AudioOutLeftName, AudioOutLeft);
+			InVertexData.BindWriteVertex(Outputs::AudioOutRightName, AudioOutRight);
 		}
 
 		void Reset(const FResetParams&)
@@ -175,7 +186,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		{
 			//Filter.SetFilterValues(*Inputs.MinTrackIndex, *Inputs.MaxTrackIndex, false);
 
-			Outputs.MidiStream->PrepareBlock();
+			//Outputs.MidiStream->PrepareBlock();
 
 			if (*Inputs.Enabled)
 			{
@@ -194,6 +205,8 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		FDelegateHandle RawEventDelegateHandle;
 		int32 TickOffset = 0; //in theory we can start when the stream tick is different from the device tick, we'll see
 		TArray<TTuple<int32, FMidiMsg>> PendingMessages;
+		FAudioBufferWriteRef AudioOutLeft;
+		FAudioBufferWriteRef AudioOutRight;
 		//unDAWMetasounds::TrackIsolatorOP::FMidiTrackIsolator Filter;
 	};
 
