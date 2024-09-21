@@ -21,7 +21,7 @@
 #include "SfizzSynthNode.h"
 //#include "MidiTrackIsolator.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogSfizzSamplerNode, VeryVerbose, All);
+DEFINE_LOG_CATEGORY_STATIC(LogSfizzSamplerNode, Log, All);
 
 #define LOCTEXT_NAMESPACE "Sfizz4Unreal_SfizzSyntNode"
 
@@ -266,6 +266,9 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				{
 					LibPath = *Inputs.SfzLibPath;
 					SfizzSynth = sfizz_create_synth();
+					sfizz_set_preload_size(SfizzSynth, 1024 * 1024 * 1024); // 1GB (default is 64MB
+	
+					//sfizz_enable_logging(SfizzSynth, "Sfizz");
 					sfizz_set_sample_rate(SfizzSynth, SampleRate);
 					sfizz_set_samples_per_block(SfizzSynth, BlockSizeFrames);
 					//DecodedAudioDataBuffer.resize(2 * BlockSizeFrames);
@@ -375,8 +378,8 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 			sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, BlockSizeFrames);
 
-			const int32 NumActiveVoices = sfizz_get_num_active_voices(SfizzSynth);
-			UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NumActiveVoices: %d"), NumActiveVoices);
+			//const int32 NumActiveVoices = sfizz_get_num_active_voices(SfizzSynth);
+			//UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NumActiveVoices: %d"), NumActiveVoices);
 
 
 
