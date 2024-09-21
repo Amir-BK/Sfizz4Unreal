@@ -236,7 +236,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				break;
 			case GNoteOn:
 				NoteOn(InVoiceId, InData1, InData2, InChannel, InEventTick, InCurrentTick, InMsOffset);
-				UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Midi Message Note On %d"), InData1);
+				UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NoteOn: %d"), InData1);
 				break;
 			case GPolyPres:
 				//PolyPressure(InVoiceId, InData1, InData2, InChannel);
@@ -259,15 +259,16 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			const int32 BlockSizeFrames = AudioOutLeft->Num();
 			PendingNoteActions.Empty();
 			
-			if (*Inputs.SfzLibPath != LibPath)
+			//if (*Inputs.SfzLibPath != LibPath)
 			{
-				LibPath = *Inputs.SfzLibPath;
+			
 				if (!bSfizzContextCreated)
 				{
+					LibPath = *Inputs.SfzLibPath;
 					SfizzSynth = sfizz_create_synth();
 					sfizz_set_sample_rate(SfizzSynth, SampleRate);
 					sfizz_set_samples_per_block(SfizzSynth, BlockSizeFrames);
-					DecodedAudioDataBuffer.resize(2 * BlockSizeFrames);
+					//DecodedAudioDataBuffer.resize(2 * BlockSizeFrames);
 					DeinterleavedBuffer.resize(2);
 					DeinterleavedBuffer[0] = AudioOutLeft->GetData();
 					DeinterleavedBuffer[1] = AudioOutRight->GetData();
@@ -277,6 +278,17 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 					bSuccessLoadSFZFile = sfizz_load_file(SfizzSynth, TCHAR_TO_ANSI(*RemoveQuotes));
 					UE_CLOG(!bSuccessLoadSFZFile, LogTemp, Warning, TEXT("SFZ file failed to load, Synth not initialized."));
+
+					//set number of voices to 8
+					sfizz_set_num_voices(SfizzSynth, 16);
+
+					//if scala path is not empty load the scala file
+					if (!Inputs.ScalaFilePath->IsEmpty())
+					{
+						ScalaPath = *Inputs.ScalaFilePath;
+						ScalaPath.TrimQuotesInline();
+						bool bSuccessLoadingScalaFile = sfizz_load_scala_file(SfizzSynth, TCHAR_TO_ANSI(*ScalaPath));
+					}
 				}
 
 				if (bSfizzContextCreated)
@@ -304,7 +316,6 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 			// create an iterator for midi events in the block
 			const TArray<FMidiStreamEvent>& MidiEvents = Inputs.MidiStream->GetEventsInBlock();
-			UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Midi Events: %d"), MidiEvents.Num());
 			auto MidiEventIterator = MidiEvents.begin();
 
 			// create an iterator for the midi clock 
@@ -315,8 +326,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			{
 				while (MidiEventIterator != MidiEvents.end())
 				{
-					//if ((*MidiEventIterator).BlockSampleFrameIndex <= CurrentBlockFrameIndex)
-					
+
 					{
 						const FMidiMsg& MidiMessage = (*MidiEventIterator).MidiMessage;
 						if (MidiMessage.IsStd()) // && (*MidiEventIterator).TrackIndex == CurrentTrackNumber)
@@ -341,10 +351,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 						}
 						++MidiEventIterator;
 					}
-					//else
-					//{
-					//	break;
-					//}
+
 				}
 			}
 
@@ -354,21 +361,23 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				if (Action.Velocity == kNoteOff)
 				{
 					
-					sfizz_send_note_off(SfizzSynth, 0, Action.MidiNote, Action.Velocity);
+					sfizz_send_note_off(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
 
 				}
 				else {
-					UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Note On"));
-					sfizz_send_note_on(SfizzSynth, 0, Action.MidiNote, Action.Velocity);
+					sfizz_send_note_on(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
 
 				}
 				
 			}
 
+			FScopeLock Lock(&SfizzCritSec);
+
 			sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, BlockSizeFrames);
 
-			_memccpy(AudioOutLeft->GetData(), DeinterleavedBuffer[0], BlockSizeFrames, sizeof(float));
-			_memccpy(AudioOutRight->GetData(), DeinterleavedBuffer[1], BlockSizeFrames, sizeof(float));
+			const int32 NumActiveVoices = sfizz_get_num_active_voices(SfizzSynth);
+			UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NumActiveVoices: %d"), NumActiveVoices);
+
 
 
 		}
@@ -400,6 +409,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 		//stuff copied from the fusion sampler...
 		FCriticalSection sNoteActionCritSec;
+		FCriticalSection SfizzCritSec;
 		FCriticalSection sNoteStatusCritSec;
 		static const int8 kNoteIgnore = -1;
 		static const int8 kNoteOff = 0;
