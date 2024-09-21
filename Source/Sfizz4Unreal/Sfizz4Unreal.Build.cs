@@ -61,6 +61,7 @@ public class Sfizz4Unreal : ModuleRules
 				"AudioExtensions",
 				"AudioMixer",
 				"AudioMixerCore",
+				"SignalProcessing",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

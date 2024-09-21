@@ -14,7 +14,9 @@ class SFIZZ4UNREAL_API USfizzSynthComponent : public USynthComponent
 {
 	GENERATED_BODY()
 
-	sfizz_synth_t* synth;
+	sfizz_synth_t* SfizzSynth;
+
+	~USfizzSynthComponent();
 
 
 	std::vector<float>   DecodedAudioDataBuffer;
