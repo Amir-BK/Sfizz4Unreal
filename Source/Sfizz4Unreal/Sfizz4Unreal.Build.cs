@@ -8,6 +8,7 @@ public class Sfizz4Unreal : ModuleRules
 	public Sfizz4Unreal(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+		IWYUSupport = IWYUSupport.None;
 		PublicIncludePaths.Add(Path.Combine(PluginDirectory, "Sfizz"));
 
 		
@@ -62,6 +63,15 @@ public class Sfizz4Unreal : ModuleRules
 				"AudioMixer",
 				"AudioMixerCore",
 				"SignalProcessing",
+				"MetasoundStandardNodes",
+                "HarmonixDsp",
+                "HarmonixMidi",
+                "Harmonix",
+                "HarmonixMetasound",
+				"MetasoundEngine",
+				"MetasoundGraphCore",
+				"MetasoundFrontend",
+				"MetasoundGenerator",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

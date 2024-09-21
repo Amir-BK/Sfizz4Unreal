@@ -13,8 +13,8 @@ USfizzSynthComponent::~USfizzSynthComponent()
 	{
 		sfizz_free(SfizzSynth);
 		SfizzSynth = nullptr;
-		DecodedChannelsStartPtr[0] = nullptr;
-		DecodedChannelsStartPtr[1] = nullptr;
+		DeinterleavedBuffer[0] = nullptr;
+		DeinterleavedBuffer[1] = nullptr;
 		DecodedAudioDataBuffer.clear();
 
 	}
@@ -26,8 +26,8 @@ void USfizzSynthComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 	sfizz_free(SfizzSynth);
-	DecodedChannelsStartPtr[0] = nullptr;
-	DecodedChannelsStartPtr[1] = nullptr;
+	DeinterleavedBuffer[0] = nullptr;
+	DeinterleavedBuffer[1] = nullptr;
 	DecodedAudioDataBuffer.clear();
 
 }
@@ -40,9 +40,9 @@ bool USfizzSynthComponent::Init(int32& SampleRate)
 	sfizz_set_sample_rate(SfizzSynth, SampleRate);
 	sfizz_set_samples_per_block(SfizzSynth, 1024);
 	DecodedAudioDataBuffer.resize(1024);
-	DecodedChannelsStartPtr.resize(2);
-	DecodedChannelsStartPtr[0] = DecodedAudioDataBuffer.data();
-	DecodedChannelsStartPtr[1] = DecodedAudioDataBuffer.data() + 512;
+	DeinterleavedBuffer.resize(2);
+	DeinterleavedBuffer[0] = DecodedAudioDataBuffer.data();
+	DeinterleavedBuffer[1] = DecodedAudioDataBuffer.data() + 512;
 	//sfizz_set_num_voices(synth, 64);
 	FString PathToSanitize = SfzAssetPath;
 	PathToSanitize.TrimQuotesInline();
@@ -66,9 +66,11 @@ int32 USfizzSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 		return 0;
 	}
 
-	sfizz_render_block(SfizzSynth, DecodedChannelsStartPtr.data(), 2, 512);
+	//we give SFZ a pointer to the head of the deinterleaved array
+	sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, 512);
 	
-	Audio::BufferInterleave2ChannelFast(DecodedChannelsStartPtr[0], DecodedChannelsStartPtr[1], OutAudio, NumSamples / 2);
+	//unreal audio system expects interleaved audio for multichannel
+	Audio::BufferInterleave2ChannelFast(DeinterleavedBuffer[0], DeinterleavedBuffer[1], OutAudio, NumSamples / 2);
 
 	return NumSamples;
 }
