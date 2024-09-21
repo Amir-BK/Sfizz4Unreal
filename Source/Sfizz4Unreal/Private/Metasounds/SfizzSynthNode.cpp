@@ -21,6 +21,8 @@
 #include "SfizzSynthNode.h"
 //#include "MidiTrackIsolator.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogSfizzSamplerNode, VeryVerbose, All);
+
 #define LOCTEXT_NAMESPACE "Sfizz4Unreal_SfizzSyntNode"
 
 namespace Sfizz4Unreal::SfizzSynthNode
@@ -141,9 +143,9 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 		FSfizzSynthMetasoundOperator(const FBuildOperatorParams& InParams, FInputs&& InInputs)
 			: Inputs(MoveTemp(InInputs))
+			, SampleRate(InParams.OperatorSettings.GetSampleRate())
 			, AudioOutLeft(FAudioBufferWriteRef::CreateNew(InParams.OperatorSettings))
 			, AudioOutRight(FAudioBufferWriteRef::CreateNew(InParams.OperatorSettings))
-			, SampleRate(InParams.OperatorSettings.GetSampleRate())
 		{
 			Reset(InParams);
 		}
@@ -176,7 +178,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		//destructor
 		virtual ~FSfizzSynthMetasoundOperator()
 		{
-			UE_LOG(LogTemp, Log, TEXT("Sfizz Synth Node Destructor"));
+			UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Sfizz Synth Node Destructor"));
 			if (SfizzSynth)
 			{
 				sfizz_free(SfizzSynth);
@@ -223,10 +225,39 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			NoteOn(InVoiceId, InMidiNoteNumber, kNoteOff);
 		}
 
+		void HandleMidiMessage(FMidiVoiceId InVoiceId, int8 InStatus, int8 InData1, int8 InData2, int32 InEventTick, int32 InCurrentTick, float InMsOffset)
+		{
+			using namespace Harmonix::Midi::Constants;
+			int8 InChannel = InStatus & 0xF;
+			switch (InStatus & 0xF0)
+			{
+			case GNoteOff:
+				NoteOff(InVoiceId, InData1, InChannel);
+				break;
+			case GNoteOn:
+				NoteOn(InVoiceId, InData1, InData2, InChannel, InEventTick, InCurrentTick, InMsOffset);
+				UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Midi Message Note On %d"), InData1);
+				break;
+			case GPolyPres:
+				//PolyPressure(InVoiceId, InData1, InData2, InChannel);
+				break;
+			case GChanPres:
+				//ChannelPressure(InData1, InData2, InChannel);
+				break;
+			case GControl:
+				//SetHighOrLowControllerByte((EControllerID)InData1, InData2, InChannel);
+				break;
+			case GPitch:
+				//SetPitchBend(FMidiMsg::GetPitchBendFromData(InData1, InData2), InChannel);
+				break;
+			}
+		}
+
 
 		void Execute()
 		{
 			const int32 BlockSizeFrames = AudioOutLeft->Num();
+			PendingNoteActions.Empty();
 			
 			if (*Inputs.SfzLibPath != LibPath)
 			{
@@ -251,7 +282,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				if (bSfizzContextCreated)
 				{
 					// send note on test
-					sfizz_send_note_on(SfizzSynth, 0, 60, 100);
+					//sfizz_send_note_on(SfizzSynth, 0, 60, 100);
 				}
 			}
 
@@ -270,6 +301,69 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			//Filter.SetFilterValues(*Inputs.MinTrackIndex, *Inputs.MaxTrackIndex, false);
 
 			//Outputs.MidiStream->PrepareBlock();
+
+			// create an iterator for midi events in the block
+			const TArray<FMidiStreamEvent>& MidiEvents = Inputs.MidiStream->GetEventsInBlock();
+			UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Midi Events: %d"), MidiEvents.Num());
+			auto MidiEventIterator = MidiEvents.begin();
+
+			// create an iterator for the midi clock 
+			const TSharedPtr<const FMidiClock, ESPMode::NotThreadSafe> MidiClock = Inputs.MidiStream->GetClock();
+
+			int32 FramesRequired = 1;
+			//while (FramesRequired > 0)
+			{
+				while (MidiEventIterator != MidiEvents.end())
+				{
+					//if ((*MidiEventIterator).BlockSampleFrameIndex <= CurrentBlockFrameIndex)
+					
+					{
+						const FMidiMsg& MidiMessage = (*MidiEventIterator).MidiMessage;
+						if (MidiMessage.IsStd()) // && (*MidiEventIterator).TrackIndex == CurrentTrackNumber)
+						{
+							
+							HandleMidiMessage(
+								(*MidiEventIterator).GetVoiceId(),
+								MidiMessage.GetStdStatus(),
+								MidiMessage.GetStdData1(),
+								MidiMessage.GetStdData2(),
+								(*MidiEventIterator).AuthoredMidiTick,
+								(*MidiEventIterator).CurrentMidiTick,
+								0.0f);
+						}
+						else if (MidiMessage.IsAllNotesOff())
+						{
+							//AllNotesOff();
+						}
+						else if (MidiMessage.IsAllNotesKill())
+						{
+							//KillAllVoices();
+						}
+						++MidiEventIterator;
+					}
+					//else
+					//{
+					//	break;
+					//}
+				}
+			}
+
+			for (int i = 0; i < PendingNoteActions.Num(); i++)
+			{
+				FPendingNoteAction& Action = PendingNoteActions[i];
+				if (Action.Velocity == kNoteOff)
+				{
+					
+					sfizz_send_note_off(SfizzSynth, 0, Action.MidiNote, Action.Velocity);
+
+				}
+				else {
+					UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("Note On"));
+					sfizz_send_note_on(SfizzSynth, 0, Action.MidiNote, Action.Velocity);
+
+				}
+				
+			}
 
 			sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, BlockSizeFrames);
 
