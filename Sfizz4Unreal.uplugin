@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Sfizz4Unreal",
+	"Description": "MIDI rendering in Metasounds through Sfizz ",
+	"Category": "Other",
+	"CreatedBy": "Amir Ben-Kiki",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "Sfizz4Unreal",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

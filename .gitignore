@@ -57,6 +57,9 @@ Build/*
 Build/*/**
 !Build/*/PakBlacklist*.txt
 
+#Sfizzs binaries whitelist
+!Sfizz/*
+
 # Don't ignore icon files in Build
 !Build/**/*.ico
 
