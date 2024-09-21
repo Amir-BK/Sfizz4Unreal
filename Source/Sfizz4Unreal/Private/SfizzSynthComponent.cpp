@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "TestActor.h"
+#include "SfizzSynthComponent.h"
 
 
 // Sets default values
@@ -11,6 +11,7 @@
 void USfizzSynthComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
+
 
 	sfizz_free(synth);
 	DecodedChannelsStartPtr[0] = nullptr;
@@ -31,15 +32,27 @@ bool USfizzSynthComponent::Init(int32& SampleRate)
 	DecodedChannelsStartPtr[0] = DecodedAudioDataBuffer.data();
 	DecodedChannelsStartPtr[1] = DecodedAudioDataBuffer.data() + 512;
 	//sfizz_set_num_voices(synth, 64);
-	auto LoadPath = ("E:\\UsersFolders\\Downloads\\Harpsichord\\Choir\\Concert_Harp\\Concert Harp-1.sfz");
+	FString PathToSanitize = SfzAssetPath;
+	PathToSanitize.TrimQuotesInline();
+	auto LoadPath = TCHAR_TO_ANSI(*PathToSanitize);
 	bool bSuccessLoadSFZFile = sfizz_load_file(synth, LoadPath);
-	UE_LOG(LogTemp, Log, TEXT("SFZ file loaded: %d"), bSuccessLoadSFZFile);
+	UE_CLOG(!bSuccessLoadSFZFile, LogTemp, Warning, TEXT("SFZ file failed to load, Synth not initialized."));
 
-	return true;
+	//if couldn't init, free synth to avoid memory leak 
+	if (!bSuccessLoadSFZFile) {
+		sfizz_free(synth);
+		synth = nullptr;
+	}
+	return bSuccessLoadSFZFile;
 }
 
 int32 USfizzSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 {
+
+	if (!synth)
+	{
+		return 0;
+	}
 
 	sfizz_render_block(synth, DecodedChannelsStartPtr.data(), 2, 512);
 	
@@ -58,4 +71,9 @@ int32 USfizzSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 void USfizzSynthComponent::SendNoteOn(int32 NoteNumber, int32 Velocity)
 {
 	sfizz_send_note_on(synth, 0, NoteNumber, Velocity);
+}
+
+void USfizzSynthComponent::SendNoteOff(int32 NoteNumber, int32 Velocity)
+{
+	sfizz_send_note_off(synth, 0, NoteNumber, Velocity);
 }

@@ -7,7 +7,7 @@
 #include "Components/SynthComponent.h"
 #include "Sfizz.h"
 #include <vector>
-#include "TestActor.generated.h"
+#include "SfizzSynthComponent.generated.h"
 
 UCLASS(ClassGroup = Synth, meta = (BlueprintSpawnableComponent))
 class SFIZZ4UNREAL_API USfizzSynthComponent : public USynthComponent
@@ -19,6 +19,10 @@ class SFIZZ4UNREAL_API USfizzSynthComponent : public USynthComponent
 
 	std::vector<float>   DecodedAudioDataBuffer;
 	std::vector<float*>  DecodedChannelsStartPtr;
+
+	//the local path for the SFZ sample bank, if you intend to use it in a packaged game make sure this is a local path and the the SFZ file and its samples are packaged
+	UPROPERTY(EditAnywhere, Category = "Sfizz")
+	FString SfzAssetPath;
 
 public:	
 
@@ -32,5 +36,9 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	void SendNoteOn(int32 NoteNumber, int32 Velocity);
+
+	UFUNCTION(BlueprintCallable)
+	void SendNoteOff(int32 NoteNumber, int32 Velocity);
+
 
 };
