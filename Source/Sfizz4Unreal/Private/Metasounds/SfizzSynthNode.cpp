@@ -225,6 +225,15 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			NoteOn(InVoiceId, InMidiNoteNumber, kNoteOff);
 		}
 
+		void SetPitchBend(float Value, int8 InMidiChannel /*= 0*/)
+		{
+			FScopeLock Lock(&SfizzCritSec);
+			// we ignore InMidiChannel because this is a single channel instrument!
+			check((-1.0f <= Value) & (Value <= 1.0f));
+			//PitchBendRamper.SetTarget(Value);
+		}
+
+
 		void HandleMidiMessage(FMidiVoiceId InVoiceId, int8 InStatus, int8 InData1, int8 InData2, int32 InEventTick, int32 InCurrentTick, float InMsOffset)
 		{
 			using namespace Harmonix::Midi::Constants;
@@ -232,23 +241,28 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			switch (InStatus & 0xF0)
 			{
 			case GNoteOff:
-				NoteOff(InVoiceId, InData1, InChannel);
+				sfizz_send_note_off(SfizzSynth, 0, InData1, InData2);
 				break;
 			case GNoteOn:
-				NoteOn(InVoiceId, InData1, InData2, InChannel, InEventTick, InCurrentTick, InMsOffset);
-				UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NoteOn: %d"), InData1);
+				//NoteOn(InVoiceId, InData1, InData2, InChannel, InEventTick, InCurrentTick, InMsOffset);
+				sfizz_send_note_on(SfizzSynth, 0, InData1, InData2);
+				//UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NoteOn: %d"), InData1);
 				break;
 			case GPolyPres:
 				//PolyPressure(InVoiceId, InData1, InData2, InChannel);
+		
 				break;
 			case GChanPres:
 				//ChannelPressure(InData1, InData2, InChannel);
+				sfizz_send_channel_aftertouch(SfizzSynth, 0, InData1);
 				break;
 			case GControl:
 				//SetHighOrLowControllerByte((EControllerID)InData1, InData2, InChannel);
+				sfizz_send_cc(SfizzSynth, 0, InData1, InData2);
 				break;
 			case GPitch:
 				//SetPitchBend(FMidiMsg::GetPitchBendFromData(InData1, InData2), InChannel);
+				sfizz_send_pitch_wheel(SfizzSynth, 0, InData1);
 				break;
 			}
 		}
@@ -361,21 +375,33 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				}
 			}
 
-			for (int i = 0; i < PendingNoteActions.Num(); i++)
+			if (MidiClock.IsValid())
 			{
-				FPendingNoteAction& Action = PendingNoteActions[i];
-				if (Action.Velocity == kNoteOff)
-				{
-					
-					sfizz_send_note_off(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
-
-				}
-				else {
-					sfizz_send_note_on(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
-
-				}
-				
+				const float ClockSpeed = MidiClock->GetSpeedAtBlockSampleFrame(0);
+				//SetSpeed(ClockSpeed, !(*ClockSpeedAffectsPitchInPin));
+				const float ClockTempo = MidiClock->GetTempoAtBlockSampleFrame(0);
+				sfizz_send_bpm_tempo(SfizzSynth, 0, ClockTempo);
+				//SetTempo(ClockTempo);
+				//const float Beat = MidiClock->GetQuarterNoteIncludingCountIn();
+				//SetBeat(Beat);
 			}
+
+			//for (int i = 0; i < PendingNoteActions.Num(); i++)
+			//{
+			//	FPendingNoteAction& Action = PendingNoteActions[i];
+			//	//UE_LOG(LogSfizzSamplerNode, Log, TEXT("Note: %d, FrameOffset: %d, Velocity: %d"), Action.MidiNote, Action.FrameOffset, Action.Velocity);
+			//	if (Action.Velocity == kNoteOff)
+			//	{
+			//		
+			//		sfizz_send_note_off(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
+
+			//	}
+			//	else {
+			//		sfizz_send_note_on(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
+
+			//	}
+			//	
+			//}
 
 			FScopeLock Lock(&SfizzCritSec);
 
@@ -433,6 +459,17 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		TArray<FPendingNoteAction> PendingNoteActions;
 		FMIDINoteStatus NoteStatus[Harmonix::Midi::Constants::GMaxNumNotes];
 
+		//pitch bend
+
+		// on range [-1, 1]
+		//TLinearRamper<float> PitchBendRamper;
+
+		// extra pitch bend in semitones
+		float ExtraPitchBend = 0.0f;
+		float PitchBendFactor = 1.0f;
+
+		float FineTuneCents = 0.0f;
+		
 		//sfizz stuff
 		sfizz_synth_t* SfizzSynth;
 
