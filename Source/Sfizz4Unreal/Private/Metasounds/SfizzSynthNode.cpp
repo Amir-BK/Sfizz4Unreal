@@ -285,6 +285,9 @@ namespace Sfizz4Unreal::SfizzSynthNode
 					//set number of voices to 8
 					sfizz_set_num_voices(SfizzSynth, 16);
 
+					CurrentTrackNumber = *Inputs.MinTrackIndex;
+					CurrentChannelNumber = *Inputs.MaxTrackIndex;
+
 					//if scala path is not empty load the scala file
 					if (!Inputs.ScalaFilePath->IsEmpty())
 					{
@@ -332,7 +335,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 					{
 						const FMidiMsg& MidiMessage = (*MidiEventIterator).MidiMessage;
-						if (MidiMessage.IsStd()) // && (*MidiEventIterator).TrackIndex == CurrentTrackNumber)
+						if (MidiMessage.IsStd()  && (*MidiEventIterator).TrackIndex == CurrentTrackNumber)
 						{
 							
 							HandleMidiMessage(
@@ -424,6 +427,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		//** DATA
 		int32 FramesPerBlock = 0;
 		int32 CurrentTrackNumber = 0;
+		int32 CurrentChannelNumber = 0;
 		bool MadeAudioLastFrame = false;
 
 		TArray<FPendingNoteAction> PendingNoteActions;
