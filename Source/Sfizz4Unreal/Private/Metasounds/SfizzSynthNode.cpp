@@ -168,10 +168,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 
 		void Reset(const FResetParams&)
 		{
-			
-			//Outputs.MidiStream->Reset();
-			//Outputs.MidiStream->SetSampleRate(48000);
-			//Outputs.MidiStream->SetSamplesPerBlock(1024);
+
 		}
 
 
@@ -189,79 +186,35 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			}
 
 		}
+			
 
-		void NoteOn(FMidiVoiceId InVoiceId, int8 InMidiNoteNumber, int8 InVelocity, int8 InMidiChannel = 0, int32 InEventTick = 0, int32 InCurrentTick = 0, float InOffsetMs = 0)
-		{
-			// we ignore InMidiChannel because this is a single channel instrument!
-			if (InMidiNoteNumber > Harmonix::Midi::Constants::GMaxNote)
-			{
-				return;
-			}
 
-			FScopeLock Lock(&sNoteActionCritSec);
-
-			FPendingNoteAction* ExitingAction = PendingNoteActions.FindByPredicate([=](const FPendingNoteAction& Action) { return Action.VoiceId == InVoiceId; });
-			int8 PendingVelocity = ExitingAction ? ExitingAction->Velocity : 0;
-
-			if (InVelocity > PendingVelocity || InVelocity == kNoteOff)
-			{
-				PendingNoteActions.Add(
-					{
-						/* .MidiNote    = */ InMidiNoteNumber,
-						/* .Velocity    = */ InVelocity,
-						/* .EventTick   = */ InEventTick,
-						/* .TriggerTick = */ InCurrentTick,
-						/* .OffsetMs    = */ InOffsetMs,
-						/* .FrameOffset = */ 0,
-						/* .VoiceId     = */ InVoiceId
-					});
-			}
-		}
-	
-
-		void NoteOff(FMidiVoiceId InVoiceId, int8 InMidiNoteNumber, int8 InMidiChannel /*= 0*/)
-		{
-			// we ignore InMidiChannel because this is a single channel instrument!
-			NoteOn(InVoiceId, InMidiNoteNumber, kNoteOff);
-		}
-
-		void SetPitchBend(float Value, int8 InMidiChannel /*= 0*/)
-		{
-			FScopeLock Lock(&SfizzCritSec);
-			// we ignore InMidiChannel because this is a single channel instrument!
-			check((-1.0f <= Value) & (Value <= 1.0f));
-			//PitchBendRamper.SetTarget(Value);
-		}
 
 
 		void HandleMidiMessage(FMidiVoiceId InVoiceId, int8 InStatus, int8 InData1, int8 InData2, int32 InEventTick, int32 InCurrentTick, float InMsOffset)
 		{
 			using namespace Harmonix::Midi::Constants;
 			int8 InChannel = InStatus & 0xF;
+			FScopeLock Lock(&sNoteActionCritSec);
 			switch (InStatus & 0xF0)
 			{
 			case GNoteOff:
 				sfizz_send_note_off(SfizzSynth, 0, InData1, InData2);
 				break;
 			case GNoteOn:
-				//NoteOn(InVoiceId, InData1, InData2, InChannel, InEventTick, InCurrentTick, InMsOffset);
 				sfizz_send_note_on(SfizzSynth, 0, InData1, InData2);
-				//UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NoteOn: %d"), InData1);
 				break;
 			case GPolyPres:
-				//PolyPressure(InVoiceId, InData1, InData2, InChannel);
+
 		
 				break;
 			case GChanPres:
-				//ChannelPressure(InData1, InData2, InChannel);
 				sfizz_send_channel_aftertouch(SfizzSynth, 0, InData1);
 				break;
 			case GControl:
-				//SetHighOrLowControllerByte((EControllerID)InData1, InData2, InChannel);
 				sfizz_send_cc(SfizzSynth, 0, InData1, InData2);
 				break;
 			case GPitch:
-				//SetPitchBend(FMidiMsg::GetPitchBendFromData(InData1, InData2), InChannel);
 				sfizz_send_pitch_wheel(SfizzSynth, 0, InData1);
 				break;
 			}
@@ -327,7 +280,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			
 			StuckNoteGuard.UnstickNotes(*Inputs.MidiStream, [this](const FMidiStreamEvent& Event)
 				{
-					NoteOff(Event.GetVoiceId(), Event.MidiMessage.GetStdData1(), Event.MidiMessage.GetStdChannel());
+					//NoteOff(Event.GetVoiceId(), Event.MidiMessage.GetStdData1(), Event.MidiMessage.GetStdChannel());
 				});
 			
 			//Filter.SetFilterValues(*Inputs.MinTrackIndex, *Inputs.MaxTrackIndex, false);
