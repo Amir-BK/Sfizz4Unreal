@@ -67,7 +67,7 @@ int32 USfizzSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 	}
 
 	//we give SFZ a pointer to the head of the deinterleaved array
-	sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, 512);
+	sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), NumChannels, NumSamples / NumChannels);
 	
 	//unreal audio system expects interleaved audio for multichannel
 	Audio::BufferInterleave2ChannelFast(DeinterleavedBuffer[0], DeinterleavedBuffer[1], OutAudio, NumSamples / 2);

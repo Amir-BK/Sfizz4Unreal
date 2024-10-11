@@ -200,9 +200,11 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			{
 			case GNoteOff:
 				sfizz_send_note_off(SfizzSynth, 0, InData1, InData2);
+				NoteStatus[InData1].KeyedOn = false;
 				break;
 			case GNoteOn:
 				sfizz_send_note_on(SfizzSynth, 0, InData1, InData2);
+				NoteStatus[InData1].KeyedOn = true;
 				break;
 			case GPolyPres:
 
@@ -229,8 +231,18 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			//if (*Inputs.SfzLibPath != LibPath)
 			{
 			
-				if (!bSfizzContextCreated)
+				if (!bSfizzContextCreated || (*Inputs.SfzLibPath != LibPath))
 				{
+					if (bSfizzContextCreated)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("Sfizz Context already created, freeing resources"));
+						sfizz_free(SfizzSynth);
+						SfizzSynth = nullptr;
+						DeinterleavedBuffer[0] = nullptr;
+						DeinterleavedBuffer[1] = nullptr;
+						DecodedAudioDataBuffer.clear();
+					}
+					
 					LibPath = *Inputs.SfzLibPath;
 					SfizzSynth = sfizz_create_synth();
 					sfizz_set_preload_size(SfizzSynth, 1024 * 1024 * 1024); // 1GB (default is 64MB
@@ -264,11 +276,6 @@ namespace Sfizz4Unreal::SfizzSynthNode
 					}
 				}
 
-				if (bSfizzContextCreated)
-				{
-					// send note on test
-					//sfizz_send_note_on(SfizzSynth, 0, 60, 100);
-				}
 			}
 
 			
@@ -281,11 +288,10 @@ namespace Sfizz4Unreal::SfizzSynthNode
 			StuckNoteGuard.UnstickNotes(*Inputs.MidiStream, [this](const FMidiStreamEvent& Event)
 				{
 					//NoteOff(Event.GetVoiceId(), Event.MidiMessage.GetStdData1(), Event.MidiMessage.GetStdChannel());
+					sfizz_send_note_off(SfizzSynth, 0, Event.MidiMessage.GetStdData1(), 0);
 				});
 			
-			//Filter.SetFilterValues(*Inputs.MinTrackIndex, *Inputs.MaxTrackIndex, false);
 
-			//Outputs.MidiStream->PrepareBlock();
 
 			// create an iterator for midi events in the block
 			const TArray<FMidiStreamEvent>& MidiEvents = Inputs.MidiStream->GetEventsInBlock();
@@ -317,10 +323,22 @@ namespace Sfizz4Unreal::SfizzSynthNode
 						else if (MidiMessage.IsAllNotesOff())
 						{
 							//AllNotesOff();
+							UE_LOG(LogTemp, Warning, TEXT("All Notes Off"));
+							for (size_t i = 0; i < Harmonix::Midi::Constants::GMaxNumNotes; i++)
+							{
+								sfizz_send_note_off(SfizzSynth, 0, i, 0);
+								NoteStatus[i].KeyedOn = false;
+							}
+	
 						}
 						else if (MidiMessage.IsAllNotesKill())
 						{
-							//KillAllVoices();
+							UE_LOG(LogTemp, Warning, TEXT("All Notes Kill"));
+							for (size_t i = 0; i < Harmonix::Midi::Constants::GMaxNumNotes; i++)
+							{
+								sfizz_send_note_off(SfizzSynth, 0, i, 0);
+								NoteStatus[i].KeyedOn = false;
+							}
 						}
 						++MidiEventIterator;
 					}
@@ -339,30 +357,10 @@ namespace Sfizz4Unreal::SfizzSynthNode
 				//SetBeat(Beat);
 			}
 
-			//for (int i = 0; i < PendingNoteActions.Num(); i++)
-			//{
-			//	FPendingNoteAction& Action = PendingNoteActions[i];
-			//	//UE_LOG(LogSfizzSamplerNode, Log, TEXT("Note: %d, FrameOffset: %d, Velocity: %d"), Action.MidiNote, Action.FrameOffset, Action.Velocity);
-			//	if (Action.Velocity == kNoteOff)
-			//	{
-			//		
-			//		sfizz_send_note_off(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
-
-			//	}
-			//	else {
-			//		sfizz_send_note_on(SfizzSynth, Action.FrameOffset, Action.MidiNote, Action.Velocity);
-
-			//	}
-			//	
-			//}
 
 			FScopeLock Lock(&SfizzCritSec);
 
 			sfizz_render_block(SfizzSynth, DeinterleavedBuffer.data(), 2, BlockSizeFrames);
-
-			//const int32 NumActiveVoices = sfizz_get_num_active_voices(SfizzSynth);
-			//UE_LOG(LogSfizzSamplerNode, VeryVerbose, TEXT("NumActiveVoices: %d"), NumActiveVoices);
-
 
 
 		}
@@ -432,6 +430,7 @@ namespace Sfizz4Unreal::SfizzSynthNode
 		bool bSuccessLoadSFZFile = false;
 		bool bSfizzContextCreated = false;
 		FString LibPath;
+		FString CurrentLibPath;
 		FString ScalaPath;
 
 
