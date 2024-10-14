@@ -12,9 +12,19 @@ https://github.com/user-attachments/assets/c721e7af-2952-4a32-88f5-148737a2ca75
 
 Uses and depends on Sfizz - https://github.com/sfztools/sfizz
 
-The demo videos use the wonderful and free Virtual Playing Orchestra libraries - http://virtualplaying.com/virtual-playing-orchestra/
+The above demo videos use the wonderful and free Virtual Playing Orchestra libraries - http://virtualplaying.com/virtual-playing-orchestra/
 
-Current status: metasound node is enabled and can receive the harmonix midistream data type and render it, CPU performance is rather atrocious but you can use any SFZ instrument file and can even use a scala tuning file. 
+Sound comparison between the default Fusion Piano and Mats Helgesson's Maestro Concert Grand Piano - https://github.com/sfzinstruments/MatsHelgesson.MaestroConcertGrandPiano/
+
+
+https://github.com/user-attachments/assets/5d808e8f-4fd1-4b90-854e-76f2c9ece9c3
+
+
+
+Recommendations:
+1. Performance seems much better if the samples are on an SSD drive.
+2. If attempting to use in an actual packaged game the paths provided to sfizz should be the correct absolute paths for the target machine
+3. Sfizz can take a few seconds to load a large library, when used to render midi it's better to load play the metasound first and to give Sfizz a chance to load before sending play on the midi transport.
 
 # Community/Feedback/Support -  
 Please join the discord server - https://discord.gg/hTKjSfcbEn
