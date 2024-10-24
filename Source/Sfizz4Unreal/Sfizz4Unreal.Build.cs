@@ -27,6 +27,15 @@ public class Sfizz4Unreal : ModuleRules
 
 		}
 
+		if (Target.Platform == UnrealTargetPlatform.Mac || Target.Platform == UnrealTargetPlatform.IOS)
+		{
+
+			PublicAdditionalLibraries.Add(Path.Combine(PluginDirectory, "macos", "libsfizz.1.2.3.dylib"));
+			// PublicDelayLoadDLLs.Add("sfizz.dll");
+			//PublicAdditionalLibraries.Add(Path.Combine(PluginDirectory, "Sfizz", "sfizz.lib"));
+
+		}
+
 
 		PublicIncludePaths.AddRange(
 			new string[] {
