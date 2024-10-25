@@ -46,8 +46,7 @@ bool USfizzSynthComponent::Init(int32& SampleRate)
 	//sfizz_set_num_voices(synth, 64);
 	FString PathToSanitize = SfzAssetPath;
 	PathToSanitize.TrimQuotesInline();
-	auto LoadPath = TCHAR_TO_ANSI(*PathToSanitize);
-	bool bSuccessLoadSFZFile = sfizz_load_file(SfizzSynth, LoadPath);
+		bool bSuccessLoadSFZFile = sfizz_load_file(SfizzSynth, TCHAR_TO_ANSI(*PathToSanitize));
 	UE_CLOG(!bSuccessLoadSFZFile, LogTemp, Warning, TEXT("SFZ file failed to load, Synth not initialized."));
 
 	//if couldn't init, free synth to avoid memory leak 
